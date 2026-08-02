@@ -45,15 +45,21 @@
         state: mounted
 
     - name: Pobierz i rozpakuj archiwum AdGuard Home na wolumin LVM
-      ansible.builtin.unarchive:
-        src: https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz
-        dest: /opt
-        remote_src: yes
+      ansible.builtin.shell: |
+        curl -sSL -4 https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz -o /tmp/adguard.tar.gz
+        tar -xzf /tmp/adguard.tar.gz -C /opt
+      args:
+        creates: /opt/AdGuardHome/AdGuardHome
 
     - name: Zainstaluj i uruchom usługę systemową AdGuard Home
       ansible.builtin.command: /opt/AdGuardHome/AdGuardHome -s install
       args:
         creates: /etc/systemd/system/AdGuardHome.service
+
+    - name: Zezwól na ruch SSH w UFW
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
 
     - name: Zezwól na ruch DNS (port 53) w UFW
       community.general.ufw:
