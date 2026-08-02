@@ -1,0 +1,74 @@
+---
+- name: Instalacja AdGuard Home, LVM RAID1 i konfiguracja Firewalla
+  hosts: all
+  become: yes
+  tasks:
+    - name: Zainstaluj narzędzia LVM, UFW i programy pomocnicze
+      ansible.builtin.apt:
+        name:
+          - lvm2
+          - ufw
+          - curl
+          - tar
+        state: present
+        update_cache: yes
+
+    - name: Utwórz grupę woluminów LVM (adg_vg) z dysków sdb i sdc
+      community.general.lvg:
+        vg: adg_vg
+        pvs: /dev/sdb,/dev/sdc
+
+    - name: Utwórz wolumin logiczny RAID1 (adg_lv) zajmujący całą przestrzeń
+      community.general.lvol:
+        vg: adg_vg
+        lv: adg_lv
+        size: 100%FREE
+        opts: --type raid1 -m 1
+        shrink: false
+
+    - name: Sformatuj wolumin adg_lv systemem plików ext4
+      community.general.filesystem:
+        fstype: ext4
+        dev: /dev/adg_vg/adg_lv
+
+    - name: Stwórz katalog montowania /opt/AdGuardHome
+      ansible.builtin.file:
+        path: /opt/AdGuardHome
+        state: directory
+        mode: '0755'
+
+    - name: Zamontuj wolumin w /opt/AdGuardHome
+      ansible.posix.mount:
+        path: /opt/AdGuardHome
+        src: /dev/adg_vg/adg_lv
+        fstype: ext4
+        state: mounted
+
+    - name: Pobierz i rozpakuj archiwum AdGuard Home na wolumin LVM
+      ansible.builtin.unarchive:
+        src: https://static.adguard.com/adguardhome/release/AdGuardHome_linux_amd64.tar.gz
+        dest: /opt
+        remote_src: yes
+
+    - name: Zainstaluj i uruchom usługę systemową AdGuard Home
+      ansible.builtin.command: /opt/AdGuardHome/AdGuardHome -s install
+      args:
+        creates: /etc/systemd/system/AdGuardHome.service
+
+    - name: Zezwól na ruch DNS (port 53) w UFW
+      community.general.ufw:
+        rule: allow
+        port: '53'
+
+    - name: Zezwól na ruch do panelu admina (port 80 i 3000) w UFW
+      community.general.ufw:
+        rule: allow
+        port: '{{ item }}'
+        proto: tcp
+      loop:
+        - '80'
+        - '3000'
+
+    - name: Włącz zaporę UFW
+      community.general.ufw:
+        state: enabled
