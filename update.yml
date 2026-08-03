@@ -1,0 +1,21 @@
+---
+- name: Playbook 2 - Codzienna aktualizacja systemu Linux
+  hosts: agh_servers
+  become: yes
+  tasks:
+    - name: Odśwież cache pakietów apt i zaktualizuj system
+      apt:
+        update_cache: yes
+        upgrade: safe
+        autoremove: yes
+      register: apt_update_result
+
+    - name: Sprawdź czy wymagany jest restart systemu
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Informacja o konieczności restartu
+      debug:
+        msg: "System wymaga ponownego uruchomienia po aktualizacji!"
+      when: reboot_required.stat.exists

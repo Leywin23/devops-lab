@@ -1,0 +1,32 @@
+---
+- name: Playbook 3 - Kopia zapasowa AdGuard Home
+  hosts: agh_servers
+  become: yes
+  vars:
+    backup_date: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    local_backup_dir: "/root/backups/adguard"
+  tasks:
+    - name: Utwórz lokalny katalog na backupy na węźle kontrolnym Ansible
+      file:
+        path: "{{ local_backup_dir }}"
+        state: directory
+      delegate_to: localhost
+      run_once: yes
+      become: no
+
+    - name: Spakuj katalog AdGuard Home na serwerze AGH
+      archive:
+        path: /opt/AdGuardHome
+        dest: "/tmp/adguard_backup_{{ backup_date }}.tar.gz"
+        format: gz
+
+    - name: Pobierz archiwum backupu na węzeł kontrolny Ansible
+      fetch:
+        src: "/tmp/adguard_backup_{{ backup_date }}.tar.gz"
+        dest: "{{ local_backup_dir }}/"
+        flat: yes
+
+    - name: Usuń tymczasowe archiwum z serwera AGH
+      file:
+        path: "/tmp/adguard_backup_{{ backup_date }}.tar.gz"
+        state: absent
