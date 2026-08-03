@@ -1,0 +1,73 @@
+---
+- name: Playbook 4 - Konfiguracja Magazynu, Użytkowników i Oprogramowania na Windows Server
+  hosts: winsrv_servers
+  gather_facts: yes
+  tasks:
+    - name: 1. Utwórz pulę dyskową z uwzględnieniem dysków SSD i HDD (Storage Pools & Tiers)
+      ansible.windows.win_shell: |
+        $disks = Get-PhysicalDisk -CanPool $True
+        if ($disks) {
+            New-StoragePool -FriendlyName "PulaProjektowa" -StorageSubsystemFriendlyName "Windows Storage Spaces*" -PhysicalDisks $disks
+            # Automatyczne wykrycie i oznaczenie dysków SSD i HDD do Storage Tiers
+            Get-StoragePool -FriendlyName "PulaProjektowa" | Get-PhysicalDisk | Where-Object MediaType -EQ Unspecified | Set-PhysicalDisk -MediaType SSD
+        }
+      register: storage_pool_result
+
+    - name: 2. Utwórz wirtualny dysk z mirrorowaniem i sformatuj go systemem ReFS na literę F:
+      ansible.windows.win_shell: |
+        $pool = Get-StoragePool -FriendlyName "PulaProjektowa"
+        $vhd = Get-VirtualDisk -FriendlyName "DyskWirtualny" -ErrorAction SilentlyContinue
+        if (-not $vhd) {
+            New-VirtualDisk -StoragePool $pool -FriendlyName "DyskWirtualny" -ResiliencySettingName Mirror -UseMaximumSize -ProvisioningType Thin
+            Initialize-Disk -Number (Get-VirtualDisk -FriendlyName "DyskWirtualny" | Get-Disk).Number -PartitionStyle GPT
+            New-Partition -DiskNumber (Get-VirtualDisk -FriendlyName "DyskWirtualny" | Get-Disk).Number -DriveLetter F -UseMaximumSize
+            Format-Volume -DriveLetter F -FileSystem ReFS -NewFileSystemLabel "ProjektyData" -Confirm:$false
+        }
+
+    - name: 3. Utwórz użytkowników (Marek Romanek i Jacek Gula)
+      ansible.windows.win_user:
+        name: "{{ item.name }}"
+        password: "{{ item.pass }}"
+        state: present
+        update_password: on_create
+      loop:
+        - { name: 'Marek.Romanek', pass: 'HasloSilne123!' }
+        - { name: 'Jacek.Gula', pass: 'HasloSilne123!' }
+
+    - name: 4. Utwórz lokalną grupę zabezpieczeń Kierownicy_Mikulski
+      ansible.windows.win_group:
+        name: "Kierownicy_Mikulski"
+        state: present
+        description: "Grupa kierowników projektu"
+
+    - name: 5. Dodaj użytkowników do grupy Kierownicy_Mikulski
+      ansible.windows.win_group_membership:
+        name: "Kierownicy_Mikulski"
+        members:
+          - Marek.Romanek
+          - Jacek.Gula
+        state: present
+
+    - name: 6. Utwórz katalog F:\Projekty oraz udział sieciowy Projekty_Mikulski
+      ansible.windows.win_share:
+        name: "Projekty_Mikulski"
+        path: "F:\\Projekty"
+        description: "Udział sieciowy dla kierowników"
+        list: yes
+        permissions:
+          - "Administrators,FULL"
+          - "Kierownicy_Mikulski,FULL"
+
+    - name: 7. Zainstaluj wymagane aplikacje przez winget
+      ansible.windows.win_shell: |
+        winget install --id 7zip.7zip --silent --accept-package-agreements --accept-source-agreements
+        winget install --id Mozilla.Firefox --silent --accept-package-agreements --accept-source-agreements
+        winget install --id ISC.BIND.Dig --silent --accept-package-agreements --accept-source-agreements
+
+    - name: 8. Blokada usuwania drukarek dla użytkowników niebędących administratorami w Rejestrze
+      ansible.windows.win_reg:
+        path: HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers
+        name: 1
+        data: 1
+        type: dword
+        state: present
