@@ -3,9 +3,12 @@
   hosts: agh_servers
   become: yes
   vars:
-    backup_date: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
     local_backup_dir: "/root/backups/adguard"
   tasks:
+    - name: Utwórz unikalną zmienną czasową dla backupu
+      set_fact:
+        backup_date: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+
     - name: Utwórz lokalny katalog na backupy na węźle kontrolnym Ansible
       file:
         path: "{{ local_backup_dir }}"
